@@ -1,9 +1,3 @@
-// ─────────────────────────────────────────────────────────────
-//  OutreachBlast Backend Server
-//  Deploy free on Railway.app or Render.com
-//  No limits. Your emails. Your control.
-// ─────────────────────────────────────────────────────────────
-
 const express = require("express");
 const nodemailer = require("nodemailer");
 const cors = require("cors");
@@ -11,139 +5,87 @@ const rateLimit = require("express-rate-limit");
 
 const app = express();
 app.use(express.json());
-app.use(cors()); // In production, set: cors({ origin: "https://yourdomain.com" })
+app.use(cors());
 
-// Basic rate limiter — prevents abuse
-const limiter = rateLimit({ windowMs: 60 * 1000, max: 100 });
+const limiter = rateLimit({ windowMs: 60 * 1000, max: 200 });
 app.use("/send", limiter);
 
-// ── SMTP CONFIG PER PROVIDER ──────────────────────────────────
 function getSmtpConfig(email, password) {
   const domain = email.split("@")[1]?.toLowerCase();
-
   const providers = {
-    "gmail.com":       { host: "smtp.gmail.com",        port: 587, secure: false },
-    "googlemail.com":  { host: "smtp.gmail.com",        port: 587, secure: false },
-    "outlook.com":     { host: "smtp.office365.com",    port: 587, secure: false },
-    "hotmail.com":     { host: "smtp.office365.com",    port: 587, secure: false },
-    "live.com":        { host: "smtp.office365.com",    port: 587, secure: false },
-    "yahoo.com":       { host: "smtp.mail.yahoo.com",   port: 587, secure: false },
-    "yahoo.co.uk":     { host: "smtp.mail.yahoo.com",   port: 587, secure: false },
-    "zoho.com":        { host: "smtp.zoho.com",         port: 587, secure: false },
-    "icloud.com":      { host: "smtp.mail.me.com",      port: 587, secure: false },
-    "me.com":          { host: "smtp.mail.me.com",      port: 587, secure: false },
-    "protonmail.com":  { host: "smtp.protonmail.ch",    port: 587, secure: false },
-    "proton.me":       { host: "smtp.protonmail.ch",    port: 587, secure: false },
+    "gmail.com":      { host: "smtp.gmail.com",       port: 587 },
+    "googlemail.com": { host: "smtp.gmail.com",       port: 587 },
+    "outlook.com":    { host: "smtp.office365.com",   port: 587 },
+    "hotmail.com":    { host: "smtp.office365.com",   port: 587 },
+    "live.com":       { host: "smtp.office365.com",   port: 587 },
+    "yahoo.com":      { host: "smtp.mail.yahoo.com",  port: 587 },
+    "zoho.com":       { host: "smtp.zoho.com",        port: 587 },
+    "icloud.com":     { host: "smtp.mail.me.com",     port: 587 },
+    "me.com":         { host: "smtp.mail.me.com",     port: 587 },
+    "protonmail.com": { host: "smtp.protonmail.ch",   port: 587 },
+    "proton.me":      { host: "smtp.protonmail.ch",   port: 587 },
   };
-
-  const config = providers[domain] || { host: `smtp.${domain}`, port: 587, secure: false };
-
+  const config = providers[domain] || { host: `smtp.${domain}`, port: 587 };
   return {
-    host: config.host,
-    port: config.port,
-    secure: config.secure,
+    host: config.host, port: config.port, secure: false,
     auth: { user: email, pass: password },
     tls: { rejectUnauthorized: false },
   };
 }
 
-// ── HEALTH CHECK ──────────────────────────────────────────────
+function friendlyError(err, email) {
+  const msg = err.message || "";
+  const domain = email.split("@")[1]?.toLowerCase();
+  if (msg.includes("535") || msg.includes("Username and Password") || msg.includes("Invalid login") || msg.includes("BadCredentials")) {
+    if (domain === "gmail.com" || domain === "googlemail.com")
+      return "Gmail rejected the password. You must use an App Password (not your normal Gmail password). Go to myaccount.google.com → Security → App Passwords.";
+    if (domain === "outlook.com" || domain === "hotmail.com")
+      return "Outlook rejected the password. Use your normal Outlook password or generate an App Password at account.microsoft.com.";
+    return "Wrong password. Check your email credentials.";
+  }
+  if (msg.includes("ECONNREFUSED") || msg.includes("ETIMEDOUT") || msg.includes("ENOTFOUND"))
+    return "Cannot connect to mail server. Check your internet or SMTP host.";
+  if (msg.includes("534") || msg.includes("less secure"))
+    return "Gmail blocked the connection. You must use an App Password with 2FA enabled.";
+  return msg;
+}
+
 app.get("/", (req, res) => {
-  res.json({ status: "OutreachBlast server running ✓", version: "1.0.0" });
+  res.json({ status: "OutreachBlast server running ✓", version: "2.0.0" });
 });
 
-// ── TEST CONNECTION ENDPOINT ──────────────────────────────────
 app.post("/test-connection", async (req, res) => {
   const { senderEmail, senderPassword } = req.body;
   if (!senderEmail || !senderPassword)
     return res.status(400).json({ ok: false, error: "Email and password required." });
-
   try {
-    const transporter = nodemailer.createTransport(getSmtpConfig(senderEmail, senderPassword));
-    await transporter.verify();
-    res.json({ ok: true, message: "Connection successful ✓" });
+    const t = nodemailer.createTransport(getSmtpConfig(senderEmail, senderPassword));
+    await t.verify();
+    res.json({ ok: true, message: "Connected successfully ✓" });
   } catch (err) {
-    res.status(400).json({ ok: false, error: err.message });
+    res.status(400).json({ ok: false, error: friendlyError(err, senderEmail) });
   }
 });
 
-// ── SEND SINGLE EMAIL ─────────────────────────────────────────
 app.post("/send", async (req, res) => {
   const { senderEmail, senderPassword, senderName, to, subject, body } = req.body;
-
   if (!senderEmail || !senderPassword || !to || !subject || !body)
     return res.status(400).json({ ok: false, error: "Missing required fields." });
-
-  // Basic email validation
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(to))
-    return res.status(400).json({ ok: false, error: "Invalid recipient email." });
-
   try {
-    const transporter = nodemailer.createTransport(getSmtpConfig(senderEmail, senderPassword));
-
-    await transporter.sendMail({
+    const t = nodemailer.createTransport(getSmtpConfig(senderEmail, senderPassword));
+    await t.sendMail({
       from: senderName ? `"${senderName}" <${senderEmail}>` : senderEmail,
-      to,
-      subject,
-      text: body,
-      // Plain text only — better deliverability than HTML for cold outreach
+      to, subject, text: body,
       headers: {
-        // Anti-spam headers
-        "X-Mailer": "OutreachBlast",
         "X-Priority": "3",
-        "Precedence": "bulk",
         "List-Unsubscribe": `<mailto:${senderEmail}?subject=unsubscribe>`,
       },
     });
-
     res.json({ ok: true, message: `Sent to ${to}` });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: friendlyError(err, senderEmail) });
   }
 });
 
-// ── SEND BLAST (batch) ────────────────────────────────────────
-app.post("/send-blast", async (req, res) => {
-  const { senderEmail, senderPassword, senderName, recipients, subject, body, delayMs = 3000 } = req.body;
-
-  if (!senderEmail || !senderPassword || !recipients?.length || !subject || !body)
-    return res.status(400).json({ ok: false, error: "Missing required fields." });
-
-  const transporter = nodemailer.createTransport(getSmtpConfig(senderEmail, senderPassword));
-  const results = [];
-
-  for (const to of recipients) {
-    // Personalize per recipient
-    const firstName = to.split("@")[0].split(".")[0].replace(/[^a-zA-Z]/g, "");
-    const company = to.split("@")[1].split(".")[0];
-    const personalSubject = subject.replace(/{{FirstName}}/gi, firstName).replace(/{{CompanyName}}/gi, company);
-    const personalBody = body.replace(/{{FirstName}}/gi, firstName).replace(/{{CompanyName}}/gi, company);
-
-    try {
-      await transporter.sendMail({
-        from: senderName ? `"${senderName}" <${senderEmail}>` : senderEmail,
-        to,
-        subject: personalSubject,
-        text: personalBody,
-        headers: {
-          "X-Priority": "3",
-          "List-Unsubscribe": `<mailto:${senderEmail}?subject=unsubscribe>`,
-        },
-      });
-      results.push({ to, status: "sent" });
-    } catch (err) {
-      results.push({ to, status: "failed", error: err.message });
-    }
-
-    // Delay between sends — critical for avoiding spam flags
-    if (delayMs > 0) await new Promise(r => setTimeout(r, delayMs));
-  }
-
-  const sent = results.filter(r => r.status === "sent").length;
-  res.json({ ok: true, sent, failed: results.length - sent, results });
-});
-
-// ── START ─────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`OutreachBlast server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`OutreachBlast v2 running on port ${PORT}`));
