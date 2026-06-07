@@ -12,27 +12,37 @@ const limiter = rateLimit({ windowMs: 60 * 1000, max: 200 });
 app.use("/send", limiter);
 
 function getSmtpConfig(email, password) {
+  // Auto-detect Brevo by SMTP key pattern â€” works with any sender email
+  if (password && password.startsWith("xsmtpsib")) {
+    return {
+      host: "smtp-relay.brevo.com", port: 587, secure: false,
+      auth: { user: email, pass: password },
+      tls: { rejectUnauthorized: false },
+      connectionTimeout: 15000, socketTimeout: 15000,
+    };
+  }
   const domain = email.split("@")[1]?.toLowerCase();
   const providers = {
-    "gmail.com":      { host: "smtp.gmail.com",       port: 465, secure: true },
-    "googlemail.com": { host: "smtp.gmail.com",       port: 465, secure: true },
-    "outlook.com":    { host: "smtp.office365.com",   port: 587, secure: false },
-    "hotmail.com":    { host: "smtp.office365.com",   port: 587, secure: false },
-    "live.com":       { host: "smtp.office365.com",   port: 587, secure: false },
-    "yahoo.com":      { host: "smtp.mail.yahoo.com",  port: 465, secure: true },
-    "zoho.com":       { host: "smtp.zoho.com",        port: 465, secure: true },
-    "icloud.com":     { host: "smtp.mail.me.com",     port: 587, secure: false },
-    "me.com":         { host: "smtp.mail.me.com",     port: 587, secure: false },
-    "protonmail.com": { host: "smtp.protonmail.ch",   port: 587, secure: false },
-    "proton.me":      { host: "smtp.protonmail.ch",   port: 587, secure: false },
+    "gmail.com":      { host: "smtp.gmail.com",         port: 465, secure: true },
+    "googlemail.com": { host: "smtp.gmail.com",         port: 465, secure: true },
+    "outlook.com":    { host: "smtp.office365.com",     port: 587, secure: false },
+    "hotmail.com":    { host: "smtp.office365.com",     port: 587, secure: false },
+    "live.com":       { host: "smtp.office365.com",     port: 587, secure: false },
+    "yahoo.com":      { host: "smtp.mail.yahoo.com",    port: 465, secure: true },
+    "zoho.com":       { host: "smtp.zoho.com",          port: 465, secure: true },
+    "icloud.com":     { host: "smtp.mail.me.com",       port: 587, secure: false },
+    "me.com":         { host: "smtp.mail.me.com",       port: 587, secure: false },
+    "protonmail.com": { host: "smtp.protonmail.ch",     port: 587, secure: false },
+    "proton.me":      { host: "smtp.protonmail.ch",     port: 587, secure: false },
+    "brevo.com":      { host: "smtp-relay.brevo.com",   port: 587, secure: false },
+    "sendinblue.com": { host: "smtp-relay.brevo.com",   port: 587, secure: false },
   };
   const config = providers[domain] || { host: `smtp.${domain}`, port: 587, secure: false };
   return {
     host: config.host, port: config.port, secure: config.secure,
     auth: { user: email, pass: password },
     tls: { rejectUnauthorized: false },
-    connectionTimeout: 15000,
-    socketTimeout: 15000,
+    connectionTimeout: 15000, socketTimeout: 15000,
   };
 }
 
@@ -49,7 +59,7 @@ function friendlyError(err, email) {
 }
 
 app.get("/", (req, res) => {
-  res.json({ status: "OutreachBlast server running âœ“", version: "5.0.0" });
+  res.json({ status: "OutreachBlast server running âœ“", version: "6.0.0" });
 });
 
 // â”€â”€ AI PROXY via Groq (free) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
