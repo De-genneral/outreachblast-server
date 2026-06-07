@@ -5,7 +5,14 @@ const rateLimit = require("express-rate-limit");
 
 const app = express();
 app.use(express.json());
-app.use(cors());
+
+// Allow all origins — works for any Netlify/custom domain
+app.use(cors({
+  origin: "*",
+  methods: ["GET","POST","OPTIONS"],
+  allowedHeaders: ["Content-Type","Authorization"],
+}));
+app.options("*", cors());
 
 const limiter = rateLimit({ windowMs: 60 * 1000, max: 200 });
 app.use("/send", limiter);
@@ -38,20 +45,18 @@ function friendlyError(err, email) {
   const domain = email.split("@")[1]?.toLowerCase();
   if (msg.includes("535") || msg.includes("Username and Password") || msg.includes("Invalid login") || msg.includes("BadCredentials")) {
     if (domain === "gmail.com" || domain === "googlemail.com")
-      return "Gmail rejected the password. You must use an App Password (not your normal Gmail password). Go to myaccount.google.com → Security → App Passwords.";
-    if (domain === "outlook.com" || domain === "hotmail.com")
-      return "Outlook rejected the password. Use your normal Outlook password or generate an App Password at account.microsoft.com.";
-    return "Wrong password. Check your email credentials.";
+      return "Gmail rejected the password. Use an App Password — myaccount.google.com → Security → App Passwords (2FA must be ON).";
+    return "Wrong password. Check your credentials.";
   }
   if (msg.includes("ECONNREFUSED") || msg.includes("ETIMEDOUT") || msg.includes("ENOTFOUND"))
-    return "Cannot connect to mail server. Check your internet or SMTP host.";
+    return "Cannot connect to mail server. Check SMTP host.";
   if (msg.includes("534") || msg.includes("less secure"))
-    return "Gmail blocked the connection. You must use an App Password with 2FA enabled.";
+    return "Gmail blocked it. You must use an App Password with 2FA enabled.";
   return msg;
 }
 
 app.get("/", (req, res) => {
-  res.json({ status: "OutreachBlast server running ✓", version: "2.0.0" });
+  res.json({ status: "OutreachBlast server running ✓", version: "3.0.0" });
 });
 
 app.post("/test-connection", async (req, res) => {
@@ -88,4 +93,4 @@ app.post("/send", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`OutreachBlast v2 running on port ${PORT}`));
+app.listen(PORT, () => console.log(`OutreachBlast v3 running on port ${PORT}`));
